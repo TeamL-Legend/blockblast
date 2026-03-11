@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Block Blast: Pro AI Edition</title>
+    <style>
+        :root { --accent: #00fbff; --bg: #05050a; }
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        body { 
+            margin: 0; padding: 0; background: var(--bg); color: white; 
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            overflow: hidden; touch-action: none; 
+            height: 100vh; display: flex; justify-content: center; align-items: center;
+        }
+        canvas { display: block; z-index: 1; touch-action: none; cursor: grab; }
+        
+        .overlay {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.92);
+            display: flex; flex-direction: column; justify-content: center;
+            align-items: center; z-index: 100; text-align: center; backdrop-filter: blur(25px);
+            padding: 20px;
+        }
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 25px; border-radius: 30px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            width: 100%; max-width: 320px; max-height: 85vh; overflow-y: auto;
+        }
+        h1 { font-size: 32px; margin: 0 0 10px 0; background: linear-gradient(to bottom, #fff, var(--accent)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        
+        button { 
+            width: 100%; padding: 14px; margin: 6px 0; font-size: 16px; border-radius: 15px; 
+            border: none; background: var(--accent); color: #000; font-weight: bold; cursor: pointer; transition: 0.2s;
+        }
+        .btn-sec { background: rgba(255,255,255,0.1); color: #fff; }
+
+        #uiHUD { position: fixed; top: env(safe-area-inset-top, 20px); text-align: center; z-index: 10; pointer-events: none; width: 100%; }
+        #scoreLabel { font-size: 45px; font-weight: 900; margin: 0; }
+        #aiTag { font-size: 10px; letter-spacing: 2px; color: var(--accent); font-weight: bold; text-transform: uppercase; }
+
+        #hammerBtn {
+            position: fixed; right: 20px; bottom: 30%; width: 60px; height: 60px;
+            background: #ffcc00; border-radius: 50%; display: flex; justify-content: center;
+            align-items: center; cursor: pointer; border: 3px solid #fff; z-index: 50; 
+            transition: 0.3s; filter: grayscale(1); opacity: 0.3; font-size: 24px;
+        }
+        #hammerBtn.ready { filter: grayscale(0); opacity: 1; transform: scale(1.1); box-shadow: 0 0 20px #ffcc00; }
+
+        .faq-text { text-align: left; font-size: 13px; line-height: 1.5; color: #ccc; }
+        hr { border: 0; border-top: 1px solid rgba(255,255,255,0.1); margin: 15px 0; }
+    </style>
+</head>
+<body onclick="startAudio()">
+
+    <div id="uiHUD">
+        <div id="aiTag">AI System Active</div>
+        <div id="scoreLabel">0</div>
+    </div>
+
+    <div id="hammerBtn" onclick="activateHammer()">🔨</div>
+
+    <div id="uiMenu" class="overlay">
+        <div class="glass-panel">
+            <h1>BLOCK BLAST</h1>
+            <p style="font-size: 10px; color: var(--accent); margin-bottom: 20px;">BETA(В РАЗРАБОТКЕ) v3.1</p>
+            <button onclick="startGame()">ИГРАТЬ</button>
+            <button class="btn-sec" onclick="showFAQ(true)">FAQ / ИНФО</button>
+            <button class="btn-sec" onclick="document.getElementById('mUp').click()">СВОЯ МУЗЫКА</button>
+            <input type="file" id="mUp" accept="audio/*" style="display:none" onchange="loadMusic(event)">
+        </div>
+    </div>
+
+    <div id="uiFAQ" class="overlay" style="display:none;">
+        <div class="glass-panel">
+            <h2>ИНСТРУКЦИЯ</h2>
+            <div class="faq-text">
+                <p><b>• Цель:</b> Заполняйте полные ряды и столбцы, чтобы уничтожать блоки и получать очки.</p>
+                <p><b>• Поворот:</b> Нажмите дважды (Double Tap) на блок в руке, чтобы повернуть его.</p>
+                <p><b>• Молот:</b> Доступен после 1000 очков. Уничтожает любой выбранный ряд.</p>
+                <p><b>• Проигрыш:</b> Если ни одну фигуру из руки нельзя поставить на поле.</p>
+                <p><b>• AI Помощь:</b> Встроенный интеллект анализирует поле и подбирает полезные фигуры.</p>
+                <hr>
+                <p>Версия: 3.1.0<br>Движок: Canvas JS<br>Статус: Стабильно</p>
+            </div>
+            <button onclick="showFAQ(false)">ПОНЯТНО</button>
+        </div>
+    </div>
+
+    <div id="uiGameOver" class="overlay" style="display:none;">
+        <div class="glass-panel">
+            <h1 style="color:#ff4444">ФИНАЛ</h1>
+            <p id="finalScore" style="font-size: 40px; margin: 10px 0;">0</p>
+            <button onclick="startGame()">ЗАНОВО</button>
+        </div>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+const GRID_SIZE = 8;
+const SHAPES = [
+    [[1]], [[1,1]], [[1,1,1]], [[1,1,1,1]], [[1,1,1,1,1]],
+    [[1,1],[1,1]], [[1,1,1],[1,1,1],[1,1,1]], [[1,1,1],[0,1,0]],
+    [[1,1,0],[0,1,1]], [[0,1,1],[1,1,0]], [[1,0],[1,0],[1,1]],
+    [[0,1],[0,1],[1,1]], [[1,0],[1,1]], [[0,1],[1,1]],
+    [[1,1,1],[1,0,0],[1,0,0]], [[1,1,1],[0,0,1],[0,0,1]], [[1,0,0],[0,1,0],[0,0,1]]
+];
+
+let score = 0, lastTap = 0, grid = [], hand = [], dragging = null, isGameActive = false;
+let view = { cellSize: 0, x: 0, y: 0, size: 0 }, hammerReady = false, hammerMode = false;
+let audioCtx = null, bgMusic = new Audio();
+
+function init() {
+    resize();
+    grid = Array(GRID_SIZE).fill().map(() => Array(GRID_SIZE).fill(0));
+    window.addEventListener('resize', resize);
+    loop();
+}
+
+function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    const s = Math.min(canvas.width * 0.9, canvas.height * 0.45);
+    view = { cellSize: s / GRID_SIZE, x: (canvas.width - s) / 2, y: canvas.height * 0.22, size: s };
+    
+    // Пересчет позиций руки при ресайзе
+    hand.forEach((s, i) => {
+        s.x = (canvas.width / 4) * (i + 1);
+        s.y = canvas.height - 110;
+        if (!dragging || dragging !== s) {
+            s.curX = s.x; s.curY = s.y;
+        }
+    });
+}
+
+function rotate(m) { return m[0].map((_, i) => m.map(row => row[i]).reverse()); }
+
+function canFit(m, r, c) {
+    if (r < 0 || c < 0 || r + m.length > GRID_SIZE || c + m[0].length > GRID_SIZE) return false;
+    for(let i=0; i<m.length; i++) 
+        for(let j=0; j<m[0].length; j++) 
+            if(m[i][j] && grid[r+i][c+j]) return false;
+    return true;
+}
+
+function getBestShape() {
+    let best = SHAPES[Math.floor(Math.random()*SHAPES.length)];
+    let maxLines = -1;
+    for(let i=0; i<20; i++) {
+        let s = SHAPES[Math.floor(Math.random()*SHAPES.length)];
+        for(let r=0; r<=GRID_SIZE-s.length; r++) {
+            for(let c=0; c<=GRID_SIZE-s[0].length; c++) {
+                if(canFit(s, r, c)) {
+                    let lines = 0; // упрощенный расчет
+                    if (lines > maxLines) { maxLines = lines; best = s; }
+                }
+            }
+        }
+    }
+    return best;
+}
+
+function spawnHand() {
+    hand = [];
+    for(let i=0; i<3; i++) {
+        let m = (i === 1) ? getBestShape() : SHAPES[Math.floor(Math.random()*SHAPES.length)];
+        const px = (canvas.width / 4) * (i + 1);
+        const py = canvas.height - 110;
+        hand.push({ 
+            m: m, c: `hsl(${Math.random()*360}, 80%, 60%)`, 
+            x: px, y: py, curX: px, curY: py, active: true 
+        });
+    }
+    if (isGameOver()) endGame();
+}
+
+function isGameOver() {
+    return !hand.some(s => {
+        if (!s.active) return false;
+        let t = s.m;
+        for(let i=0; i<4; i++) {
+            for(let r=0; r<=GRID_SIZE-t.length; r++)
+                for(let c=0; c<=GRID_SIZE-t[0].length; c++) if(canFit(t, r, c)) return true;
+            t = rotate(t);
+        }
+        return false;
+    });
+}
+
+function loop() {
+    ctx.fillStyle = "#05050a";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.fillStyle = "rgba(255,255,255,0.03)";
+    ctx.roundRect(view.x-5, view.y-5, view.size+10, view.size+10, 15); ctx.fill();
+
+    for(let r=0; r<GRID_SIZE; r++)
+        for(let c=0; c<GRID_SIZE; c++)
+            drawBox(view.x+c*view.cellSize, view.y+r*view.cellSize, view.cellSize, grid[r][c] || "rgba(255,255,255,0.04)");
+
+    if (dragging) {
+        const r = Math.round((dragging.curY - view.y - (dragging.m.length * view.cellSize)/2) / view.cellSize);
+        const c = Math.round((dragging.curX - view.x - (dragging.m[0].length * view.cellSize)/2) / view.cellSize);
+        if (canFit(dragging.m, r, c)) {
+            dragging.m.forEach((row, ri) => row.forEach((v, ci) => {
+                if(v) drawBox(view.x+(c+ci)*view.cellSize, view.y+(r+ri)*view.cellSize, view.cellSize, dragging.c, 0.3);
+            }));
+        }
+    }
+
+    hand.forEach(s => {
+        if(!s.active) return;
+        const b = view.cellSize * (dragging === s ? 0.8 : 0.4);
+        s.m.forEach((row, ri) => row.forEach((v, ci) => {
+            if(v) drawBox(s.curX + (ci-s.m[0].length/2)*b, s.curY + (ri-s.m.length/2)*b, b, s.c);
+        }));
+    });
+
+    document.getElementById('scoreLabel').innerText = score;
+    requestAnimationFrame(loop);
+}
+
+function drawBox(x, y, s, color, a=1) {
+    ctx.globalAlpha = a; ctx.fillStyle = color;
+    ctx.beginPath(); ctx.roundRect(x+2, y+2, s-4, s-4, s*0.2); ctx.fill();
+    ctx.globalAlpha = 1;
+}
+
+function handleStart(e) {
+    if (!isGameActive) return;
+    const p = getPos(e);
+    const now = Date.now();
+
+    if (hammerMode) {
+        const r = Math.floor((p.y - view.y) / view.cellSize);
+        if (r >= 0 && r < GRID_SIZE) {
+            for(let j=0; j<GRID_SIZE; j++) grid[r][j] = 0;
+            hammerMode = false; hammerReady = false;
+            document.getElementById('hammerBtn').classList.remove('ready');
+            playNote(100);
+        }
+        return;
+    }
+
+    hand.forEach(s => {
+        if (s.active && Math.hypot(s.x - p.x, s.y - p.y) < 50) {
+            if (now - lastTap < 300) {
+                s.m = rotate(s.m);
+                playNote(500);
+                dragging = null;
+            } else {
+                dragging = s;
+            }
+        }
+    });
+    lastTap = now;
+}
+
+function handleMove(e) {
+    if (!dragging) return;
+    const p = getPos(e);
+    dragging.curX = p.x; 
+    dragging.curY = p.y - 120; // Смещение чтобы палец не закрывал блок
+    e.preventDefault();
+}
+
+function handleEnd() {
+    if (!dragging) return;
+    const r = Math.round((dragging.curY - view.y - (dragging.m.length * view.cellSize)/2) / view.cellSize);
+    const c = Math.round((dragging.curX - view.x - (dragging.m[0].length * view.cellSize)/2) / view.cellSize);
+
+    if (canFit(dragging.m, r, c)) {
+        dragging.m.forEach((row, ri) => row.forEach((v, ci) => { if(v) grid[r+ri][c+ci] = dragging.c; }));
+        dragging.active = false; score += 40; playNote(400);
+        checkLines();
+        if (hand.every(h => !h.active)) spawnHand();
+        else if (isGameOver()) endGame();
+    } else {
+        dragging.curX = dragging.x; dragging.curY = dragging.y;
+    }
+    dragging = null;
+}
+
+function checkLines() {
+    let rs = [], cs = [];
+    for(let i=0; i<GRID_SIZE; i++) {
+        if (grid[i].every(v => v !== 0)) rs.push(i);
+        let f = true; for(let j=0; j<GRID_SIZE; j++) if(!grid[j][i]) f = false;
+        if(f) cs.push(i);
+    }
+    if(rs.length + cs.length > 0) {
+        rs.forEach(r => { for(let c=0; c<GRID_SIZE; c++) grid[r][c] = 0; });
+        cs.forEach(c => { for(let r=0; r<GRID_SIZE; r++) grid[r][c] = 0; });
+        score += (rs.length + cs.length) * 150;
+        if(score >= 1000 && !hammerReady) {
+            hammerReady = true;
+            document.getElementById('hammerBtn').classList.add('ready');
+        }
+    }
+}
+
+function startGame() {
+    document.getElementById('uiMenu').style.display = 'none';
+    document.getElementById('uiGameOver').style.display = 'none';
+    grid = Array(GRID_SIZE).fill().map(() => Array(GRID_SIZE).fill(0));
+    score = 0; isGameActive = true; hammerReady = false;
+    document.getElementById('hammerBtn').classList.remove('ready');
+    spawnHand();
+}
+
+function endGame() {
+    isGameActive = false;
+    document.getElementById('uiGameOver').style.display = 'flex';
+    document.getElementById('finalScore').innerText = score;
+}
+
+function showFAQ(v) { document.getElementById('uiFAQ').style.display = v ? 'flex' : 'none'; }
+function getPos(e) { const t = e.touches ? e.touches[0] : e; return { x: t.clientX, y: t.clientY }; }
+function startAudio() { if(!audioCtx) audioCtx = new AudioContext(); }
+function playNote(f) { if(!audioCtx) return; const o=audioCtx.createOscillator(), g=audioCtx.createGain(); o.frequency.value=f; g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime+0.5); o.connect(g); g.connect(audioCtx.destination); o.start(); o.stop(audioCtx.currentTime+0.5); }
+function activateHammer() { if(hammerReady) { hammerMode = true; canvas.style.cursor = "crosshair"; } }
+function loadMusic(e) { const f = e.target.files[0]; if(f) { bgMusic.src = URL.createObjectURL(f); bgMusic.loop = true; bgMusic.play(); } }
+
+canvas.addEventListener('touchstart', handleStart, {passive: false});
+canvas.addEventListener('touchmove', handleMove, {passive: false});
+canvas.addEventListener('touchend', handleEnd);
+canvas.addEventListener('mousedown', handleStart);
+window.addEventListener('mousemove', handleMove);
+window.addEventListener('mouseup', handleEnd);
+
+init();
+</script>
+</body>
+</html>
