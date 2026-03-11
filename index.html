@@ -13,11 +13,12 @@
             overflow: hidden; touch-action: none; height: 100vh;
             display: flex; justify-content: center; align-items: center;
         }
-        canvas { display: block; z-index: 1; touch-action: none; will-change: transform; }
+        canvas { display: block; z-index: 1; touch-action: none; will-change: transform; transform: translateZ(0); }
         
         .app-ui { position: fixed; inset: 0; pointer-events: none; z-index: 10; display: flex; flex-direction: column; }
         .header { padding: env(safe-area-inset-top, 20px) 20px 0; text-align: center; }
         #scoreLabel { font-size: 50px; font-weight: 900; margin: 0; text-shadow: var(--neon-text); transition: transform 0.1s; }
+        #bestScoreLabel { font-size: 14px; color: var(--accent); opacity: 0.8; margin-top: 5px; text-transform: uppercase; letter-spacing: 1px; }
         #comboText { font-size: 24px; color: #ff00ff; font-weight: 800; opacity: 0; transform: translateY(10px); transition: 0.3s; text-shadow: 0 0 10px #ff00ff; }
 
         #hammerBtn {
@@ -45,7 +46,6 @@
             text-align: left; font-size: 13px; line-height: 1.6; color: #ccc; 
             max-height: 250px; overflow-y: auto; margin: 20px 0; padding-right: 10px; 
         }
-        /* Улучшаем скролл для FAQ */
         .faq-box::-webkit-scrollbar { width: 4px; }
         .faq-box::-webkit-scrollbar-thumb { background: var(--accent); border-radius: 10px; }
 
@@ -65,6 +65,7 @@
         <div class="header">
             <br><br>
             <h1 id="scoreLabel">0</h1>
+            <div id="bestScoreLabel">РЕКОРД: 0</div>
             <div id="comboText">COMBO X2</div>
         </div>
     </div>
@@ -102,6 +103,7 @@
         <div class="glass">
             <h1 style="color:#ff00ff">GAME OVER</h1>
             <p id="finalScore" style="font-size: 60px; font-weight: 900; margin: 15px 0;">0</p>
+            <div id="newRecordMsg" style="color: var(--accent); margin-bottom: 10px; display: none; font-weight: bold;">НОВЫЙ РЕКОРД!</div>
             <button onclick="startGame()">ЗАНОВО</button>
         </div>
     </div>
@@ -110,7 +112,12 @@
 
 <script>
 const canvas = document.getElementById('gameCanvas');
-const ctx = canvas.getContext('2d', { alpha: false }); // Оптимизация контекста
+// Улучшенная производительность для iOS (powerPreference)
+const ctx = canvas.getContext('2d', { 
+    alpha: false, 
+    desynchronized: true,
+    preserveDrawingBuffer: false
+});
 
 const GRID_SIZE = 8;
 const SHAPES = [
@@ -127,28 +134,31 @@ let score = 0, grid = [], hand = [], particles = [], dragging = null;
 let isGameActive = false, view = {}, lastTap = 0, shake = 0, combo = 0;
 let hammerReady = false, hammerMode = false;
 let audioCtx = null, masterGain = null;
+let bestScore = localStorage.getItem('blockBlast_bestScore') || 0;
 
-// --- СИСТЕМА КЭШИРОВАНИЯ ТЕКСТУР ---
-const blockCache = {};
+// Обновление рекорда на UI
+document.getElementById('bestScoreLabel').innerText = `РЕКОРД: ${bestScore}`;
+
+let blockCache = {};
+
 function getBlockTexture(color, size) {
-    const key = `${color}-${size}`;
+    const key = `${color}-${Math.floor(size)}`;
     if (blockCache[key]) return blockCache[key];
 
     const bCanvas = document.createElement('canvas');
     const bCtx = bCanvas.getContext('2d');
-    const dpr = window.devicePixelRatio || 1;
+    // Оптимизация: не используем слишком высокий DPR для текстур на iPhone
+    const dpr = Math.min(window.devicePixelRatio, 2); 
     bCanvas.width = size * dpr;
     bCanvas.height = size * dpr;
     bCtx.scale(dpr, dpr);
 
-    // Рисуем неон один раз в кэш
-    bCtx.shadowBlur = size * 0.2;
+    bCtx.shadowBlur = size * 0.1;
     bCtx.shadowColor = color;
     bCtx.fillStyle = color;
     const padding = size * 0.1;
     const rectSize = size - padding * 2;
     
-    // Скругление
     const radius = rectSize * 0.2;
     bCtx.beginPath();
     bCtx.roundRect(padding, padding, rectSize, rectSize, radius);
@@ -161,19 +171,27 @@ function getBlockTexture(color, size) {
 function init() {
     resize();
     grid = Array(GRID_SIZE).fill().map(() => Array(GRID_SIZE).fill(0));
-    window.addEventListener('resize', () => { resize(); blockCache = {}; });
+    window.addEventListener('resize', () => { 
+        resize(); 
+        blockCache = {}; // Очистка кэша при ресайзе
+    });
     loop();
 }
 
 function resize() {
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
-    const s = Math.min(canvas.width * 0.9, canvas.height * 0.46);
-    view = { cellSize: s / GRID_SIZE, x: (canvas.width - s) / 2, y: canvas.height * 0.22, size: s };
+    const dpr = Math.min(window.devicePixelRatio, 2);
+    canvas.width = window.innerWidth * dpr;
+    canvas.height = window.innerHeight * dpr;
+    canvas.style.width = window.innerWidth + 'px';
+    canvas.style.height = window.innerHeight + 'px';
+    ctx.scale(dpr, dpr);
+
+    const s = Math.min(window.innerWidth * 0.9, window.innerHeight * 0.46);
+    view = { cellSize: s / GRID_SIZE, x: (window.innerWidth - s) / 2, y: window.innerHeight * 0.22, size: s };
     
     hand.forEach((s, i) => {
-        s.targetX = (canvas.width / 4) * (i + 1);
-        s.targetY = canvas.height - 120;
+        s.targetX = (window.innerWidth / 4) * (i + 1);
+        s.targetY = window.innerHeight - 120;
         if (!dragging || dragging !== s) { s.curX = s.targetX; s.curY = s.targetY; }
     });
 }
@@ -186,6 +204,7 @@ function initAudioEngine() {
     masterGain.connect(audioCtx.destination);
     
     function playBGM() {
+        if(!isGameActive) return setTimeout(playBGM, 1000);
         const osc = audioCtx.createOscillator();
         const g = audioCtx.createGain();
         osc.type = 'triangle';
@@ -202,7 +221,7 @@ function initAudioEngine() {
 }
 
 function playSfx(freq, dur=0.2) {
-    if (!audioCtx) return;
+    if (!audioCtx || audioCtx.state === 'suspended') return;
     const osc = audioCtx.createOscillator();
     const g = audioCtx.createGain();
     osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
@@ -221,7 +240,7 @@ function spawnHand() {
         for(let r=0; r<rCount; r++) m = m[0].map((_, idx) => m.map(row => row[idx]).reverse());
         hand.push({ 
             m: m, c: `hsl(${Math.random()*360}, 80%, 65%)`, 
-            curX: canvas.width/2, curY: canvas.height + 60, targetX: 0, targetY: 0, active: true 
+            curX: window.innerWidth/2, curY: window.innerHeight + 60, targetX: 0, targetY: 0, active: true 
         });
     }
     resize();
@@ -229,9 +248,8 @@ function spawnHand() {
 }
 
 function loop() {
-    // Фон без прозрачности быстрее
     ctx.fillStyle = "#020205";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
 
     ctx.save();
     if (shake > 0) {
@@ -239,13 +257,11 @@ function loop() {
         shake *= 0.85;
     }
 
-    // Сетка (статичная)
     ctx.fillStyle = "rgba(255,255,255,0.03)";
     ctx.beginPath();
     ctx.roundRect(view.x-8, view.y-8, view.size+16, view.size+16, 20);
     ctx.fill();
 
-    // Отрисовка клеток поля из кэша
     for(let r=0; r<GRID_SIZE; r++) {
         for(let c=0; c<GRID_SIZE; c++) {
             const x = view.x + c * view.cellSize;
@@ -260,7 +276,6 @@ function loop() {
         }
     }
 
-    // Призрак
     if (dragging) {
         const r = Math.round((dragging.curY - view.y - (dragging.m.length * view.cellSize)/2) / view.cellSize);
         const c = Math.round((dragging.curX - view.x - (dragging.m[0].length * view.cellSize)/2) / view.cellSize);
@@ -274,12 +289,11 @@ function loop() {
     }
     ctx.restore();
 
-    // Блоки в руке (оптимизировано перемещение)
     hand.forEach(s => {
         if(!s.active) return;
         if (dragging !== s) {
-            s.curX += (s.targetX - s.curX) * 0.2;
-            s.curY += (s.targetY - s.curY) * 0.2;
+            s.curX += (s.targetX - s.curX) * 0.15; // Более мягкая анимация
+            s.curY += (s.targetY - s.curY) * 0.15;
         }
         const bSize = view.cellSize * (dragging === s ? 0.9 : 0.5);
         const img = getBlockTexture(s.c, bSize);
@@ -288,10 +302,9 @@ function loop() {
         }));
     });
 
-    // Частицы (лимит 50 шт)
-    if(particles.length > 50) particles.shift();
+    if(particles.length > 30) particles.shift(); // Уменьшил лимит частиц для iPhone
     particles.forEach((p, i) => {
-        p.x += p.vx; p.y += p.vy; p.vy += 0.2; p.life -= 0.03;
+        p.x += p.vx; p.y += p.vy; p.vy += 0.2; p.life -= 0.04;
         ctx.fillStyle = p.c; ctx.globalAlpha = Math.max(0, p.life);
         ctx.fillRect(p.x, p.y, 3, 3);
         if(p.life <= 0) particles.splice(i, 1);
@@ -328,7 +341,7 @@ function handleStart(e) {
 
     hand.forEach(s => {
         const dx = s.curX - p.x, dy = s.curY - p.y;
-        if (s.active && Math.sqrt(dx*dx + dy*dy) < 40) {
+        if (s.active && Math.sqrt(dx*dx + dy*dy) < 50) {
             if (now - lastTap < 300) {
                 s.m = s.m[0].map((_, i) => s.m.map(row => row[i]).reverse());
                 playSfx(400, 0.05); dragging = null;
@@ -342,8 +355,8 @@ function handleMove(e) {
     if (!dragging) return;
     const p = getPos(e);
     dragging.curX = p.x; 
-    dragging.curY = p.y - (view.cellSize * 1.5);
-    e.preventDefault();
+    dragging.curY = p.y - (view.cellSize * 1.8); // Чуть выше для удобства на малых экранах
+    if (e.cancelable) e.preventDefault();
 }
 
 function handleEnd() {
@@ -378,6 +391,13 @@ function checkLines() {
         score += (rs.length + cs.length) * 100 * combo;
         if(score >= 1000 && !hammerReady) { hammerReady = true; document.getElementById('hammerBtn').classList.add('ready'); }
         showComboHUD();
+        
+        // Обновление рекорда в реальном времени
+        if(score > bestScore) {
+            bestScore = score;
+            localStorage.setItem('blockBlast_bestScore', bestScore);
+            document.getElementById('bestScoreLabel').innerText = `РЕКОРД: ${bestScore}`;
+        }
     } else { combo = 0; }
 }
 
@@ -389,7 +409,7 @@ function showComboHUD() {
 }
 
 function spawnP(x, y, c) {
-    for(let i=0; i<5; i++) particles.push({ x: x+view.cellSize/2, y: y+view.cellSize/2, vx: Math.random()*6-3, vy: Math.random()*6-3, life: 1, c: c });
+    for(let i=0; i<4; i++) particles.push({ x: x+view.cellSize/2, y: y+view.cellSize/2, vx: Math.random()*6-3, vy: Math.random()*6-3, life: 1, c: c });
 }
 
 function canFit(m, r, c) {
@@ -412,19 +432,33 @@ function startGame() {
     isGameActive = true; hammerReady = false; hammerMode = false;
     document.getElementById('uiMenu').style.display = 'none';
     document.getElementById('uiGameOver').style.display = 'none';
+    document.getElementById('newRecordMsg').style.display = 'none';
     document.getElementById('hammerBtn').classList.remove('ready', 'active');
     spawnHand();
 }
 
-function endGame() { isGameActive = false; document.getElementById('uiGameOver').style.display = 'flex'; document.getElementById('finalScore').innerText = score; }
+function endGame() { 
+    isGameActive = false; 
+    document.getElementById('uiGameOver').style.display = 'flex'; 
+    document.getElementById('finalScore').innerText = score; 
+    
+    if(score >= bestScore && score > 0) {
+        document.getElementById('newRecordMsg').style.display = 'block';
+    }
+}
+
 function showFAQ(v) { document.getElementById('uiFAQ').style.display = v ? 'flex' : 'none'; }
-function getPos(e) { const t = e.touches ? e.touches[0] : e; return { x: t.clientX, y: t.clientY }; }
+function getPos(e) { 
+    const t = e.touches ? e.touches[0] : e; 
+    const rect = canvas.getBoundingClientRect();
+    return { x: t.clientX - rect.left, y: t.clientY - rect.top }; 
+}
 function toggleHammer() { if(hammerReady) { hammerMode = !hammerMode; document.getElementById('hammerBtn').classList.toggle('active', hammerMode); } }
 function loadMusic(e) { const f = e.target.files[0]; if(f) { const a = new Audio(URL.createObjectURL(f)); a.loop = true; a.play(); } }
 
 canvas.addEventListener('touchstart', handleStart, {passive: false});
 canvas.addEventListener('touchmove', handleMove, {passive: false});
-canvas.addEventListener('touchend', handleEnd);
+canvas.addEventListener('touchend', handleEnd, {passive: false});
 canvas.addEventListener('mousedown', handleStart);
 window.addEventListener('mousemove', handleMove);
 window.addEventListener('mouseup', handleEnd);
