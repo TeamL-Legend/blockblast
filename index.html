@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Block Blast: Neon Evolution</title>
+    <title>Block Blast</title>
     <style>
         :root { --accent: #00fbff; --bg: #020205; --neon-text: 0 0 15px var(--accent); }
         * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; }
@@ -13,15 +13,13 @@
             overflow: hidden; touch-action: none; height: 100vh;
             display: flex; justify-content: center; align-items: center;
         }
-        canvas { display: block; z-index: 1; touch-action: none; }
+        canvas { display: block; z-index: 1; touch-action: none; will-change: transform; }
         
-        /* HUD */
         .app-ui { position: fixed; inset: 0; pointer-events: none; z-index: 10; display: flex; flex-direction: column; }
         .header { padding: env(safe-area-inset-top, 20px) 20px 0; text-align: center; }
         #scoreLabel { font-size: 50px; font-weight: 900; margin: 0; text-shadow: var(--neon-text); transition: transform 0.1s; }
         #comboText { font-size: 24px; color: #ff00ff; font-weight: 800; opacity: 0; transform: translateY(10px); transition: 0.3s; text-shadow: 0 0 10px #ff00ff; }
 
-        /* Hammer */
         #hammerBtn {
             position: fixed; right: 20px; bottom: 30%; width: 65px; height: 65px;
             background: linear-gradient(135deg, #ffcc00, #ff8800); border-radius: 50%;
@@ -34,7 +32,6 @@
 
         @keyframes hammerPulse { 0% { box-shadow: 0 0 10px #ffcc00; } 50% { box-shadow: 0 0 30px #ffcc00; } 100% { box-shadow: 0 0 10px #ffcc00; } }
 
-        /* Overlays */
         .overlay {
             position: fixed; inset: 0; background: rgba(0,0,0,0.92);
             display: flex; flex-direction: column; justify-content: center;
@@ -43,24 +40,30 @@
         .glass {
             background: rgba(25, 25, 40, 0.85); border: 1px solid rgba(255,255,255,0.15);
             border-radius: 40px; padding: 35px; width: 100%; max-width: 340px; text-align: center;
-            box-shadow: 0 20px 50px rgba(0,0,0,0.5);
         }
-        .faq-box { text-align: left; font-size: 13px; line-height: 1.6; color: #ccc; max-height: 250px; overflow-y: auto; margin: 20px 0; padding-right: 10px; }
+        .faq-box { 
+            text-align: left; font-size: 13px; line-height: 1.6; color: #ccc; 
+            max-height: 250px; overflow-y: auto; margin: 20px 0; padding-right: 10px; 
+        }
+        /* Улучшаем скролл для FAQ */
+        .faq-box::-webkit-scrollbar { width: 4px; }
+        .faq-box::-webkit-scrollbar-thumb { background: var(--accent); border-radius: 10px; }
+
         b { color: var(--accent); }
         button { 
             width: 100%; padding: 18px; border-radius: 20px; border: none;
             background: var(--accent); color: #000; font-weight: 800; font-size: 17px; margin: 6px 0;
-            transition: 0.2s; box-shadow: 0 4px 15px rgba(0,251,255,0.3);
+            transition: 0.2s; cursor: pointer;
         }
         button:active { transform: scale(0.95); }
-        .btn-sec { background: rgba(255,255,255,0.1); color: #fff; box-shadow: none; }
+        .btn-sec { background: rgba(255,255,255,0.1); color: #fff; }
     </style>
 </head>
 <body onclick="initAudioEngine()">
 
     <div class="app-ui">
         <div class="header">
-            <div></div><br><br>
+            <br><br>
             <h1 id="scoreLabel">0</h1>
             <div id="comboText">COMBO X2</div>
         </div>
@@ -71,7 +74,7 @@
     <div id="uiMenu" class="overlay">
         <div class="glass">
             <h1 style="margin:0; font-size: 40px; letter-spacing: -2px;">BLOCK <span style="color:var(--accent)">BLAST</span></h1>
-            <p style="opacity:0.5; font-size:12px; margin-bottom: 25px;">BETA v1.7</p>
+            <p style="opacity:0.5; font-size:12px; margin-bottom: 25px;">OPTIMIZED v1.8</p>
             <button onclick="startGame()">ИГРАТЬ</button>
             <button class="btn-sec" onclick="showFAQ(true)">ИНСТРУКЦИЯ</button>
             <button class="btn-sec" onclick="document.getElementById('mUp').click()">СВОЯ МУЗЫКА</button>
@@ -89,7 +92,7 @@
                 <b>• Комбо:</b> Сноси линии каждый ход, чтобы увеличить множитель (X2, X3 и т.д.).<br><br>
                 <b>• AI:</b> Помогает подбирать подходящие блоки, версия AI 1.0.<br><br>
                 <b>• О приложении:</b> Создано с использованием Karma API и Canvas JS. Рекорды сохраняются автоматически. Конфидициальность обеспечена совместно с Telegram, Telegram API<br><br>
-                <b>• Версия:</b> Версия 1.7 - все права защищены лицензией MIT.
+                <b>• Версия:</b> Версия 1.8 (оптимизация) - все права защищены лицензией MIT.
             </div>
             <button onclick="showFAQ(false)">ПОНЯТНО</button>
         </div>
@@ -107,28 +110,58 @@
 
 <script>
 const canvas = document.getElementById('gameCanvas');
-const ctx = canvas.getContext('2d');
+const ctx = canvas.getContext('2d', { alpha: false }); // Оптимизация контекста
 
 const GRID_SIZE = 8;
 const SHAPES = [
-    [[1]], [[1,1]], [[1,1,1]], [[1,1,1,1]], [[1,1,1,1,1]], // Палки
-    [[1,1],[1,1]], [[1,1,1],[1,1,1],[1,1,1]], // Квадраты
-    [[1,1,1],[0,1,0]], [[0,1,0],[1,1,1]], [[1,0],[1,1],[1,0]], // T
-    [[1,1,0],[0,1,1]], [[0,1,1],[1,1,0]], // Z, S
-    [[1,0],[1,0],[1,1]], [[0,1],[0,1],[1,1]], // L большие
-    [[1,1,1],[1,0,0],[1,0,0]], [[1,1,1],[0,0,1],[0,0,1]], // Углы
-    [[1,0],[1,1]], [[0,1],[1,1]], [[1,1],[1,0]], [[1,1],[0,1]] // L малые
+    [[1]], [[1,1]], [[1,1,1]], [[1,1,1,1]], [[1,1,1,1,1]],
+    [[1,1],[1,1]], [[1,1,1],[1,1,1],[1,1,1]],
+    [[1,1,1],[0,1,0]], [[0,1,0],[1,1,1]], [[1,0],[1,1],[1,0]],
+    [[1,1,0],[0,1,1]], [[0,1,1],[1,1,0]],
+    [[1,0],[1,0],[1,1]], [[0,1],[0,1],[1,1]],
+    [[1,1,1],[1,0,0],[1,0,0]], [[1,1,1],[0,0,1],[0,0,1]],
+    [[1,0],[1,1]], [[0,1],[1,1]], [[1,1],[1,0]], [[1,1],[0,1]]
 ];
 
 let score = 0, grid = [], hand = [], particles = [], dragging = null;
 let isGameActive = false, view = {}, lastTap = 0, shake = 0, combo = 0;
 let hammerReady = false, hammerMode = false;
-let audioCtx = null, masterGain = null, musicOsc = null;
+let audioCtx = null, masterGain = null;
+
+// --- СИСТЕМА КЭШИРОВАНИЯ ТЕКСТУР ---
+const blockCache = {};
+function getBlockTexture(color, size) {
+    const key = `${color}-${size}`;
+    if (blockCache[key]) return blockCache[key];
+
+    const bCanvas = document.createElement('canvas');
+    const bCtx = bCanvas.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+    bCanvas.width = size * dpr;
+    bCanvas.height = size * dpr;
+    bCtx.scale(dpr, dpr);
+
+    // Рисуем неон один раз в кэш
+    bCtx.shadowBlur = size * 0.2;
+    bCtx.shadowColor = color;
+    bCtx.fillStyle = color;
+    const padding = size * 0.1;
+    const rectSize = size - padding * 2;
+    
+    // Скругление
+    const radius = rectSize * 0.2;
+    bCtx.beginPath();
+    bCtx.roundRect(padding, padding, rectSize, rectSize, radius);
+    bCtx.fill();
+
+    blockCache[key] = bCanvas;
+    return bCanvas;
+}
 
 function init() {
     resize();
     grid = Array(GRID_SIZE).fill().map(() => Array(GRID_SIZE).fill(0));
-    window.addEventListener('resize', resize);
+    window.addEventListener('resize', () => { resize(); blockCache = {}; });
     loop();
 }
 
@@ -145,7 +178,6 @@ function resize() {
     });
 }
 
-// ГЕНЕРАТИВНАЯ МУЗЫКА И ЗВУКИ
 function initAudioEngine() {
     if (audioCtx) return;
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -153,12 +185,11 @@ function initAudioEngine() {
     masterGain.gain.value = 0.1;
     masterGain.connect(audioCtx.destination);
     
-    // Фоновый эмбиент
     function playBGM() {
         const osc = audioCtx.createOscillator();
         const g = audioCtx.createGain();
         osc.type = 'triangle';
-        const notes = [196.00, 220.00, 261.63, 293.66]; // G3, A3, C4, D4
+        const notes = [196.00, 220.00, 261.63, 293.66];
         osc.frequency.setValueAtTime(notes[Math.floor(Math.random()*notes.length)], audioCtx.currentTime);
         g.gain.setValueAtTime(0, audioCtx.currentTime);
         g.gain.linearRampToValueAtTime(0.04, audioCtx.currentTime + 2);
@@ -170,14 +201,13 @@ function initAudioEngine() {
     playBGM();
 }
 
-function playSfx(freq, dur=0.2, type='sine') {
+function playSfx(freq, dur=0.2) {
     if (!audioCtx) return;
     const osc = audioCtx.createOscillator();
     const g = audioCtx.createGain();
-    osc.type = type;
     osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
     osc.frequency.exponentialRampToValueAtTime(20, audioCtx.currentTime + dur);
-    g.gain.setValueAtTime(0.3, audioCtx.currentTime);
+    g.gain.setValueAtTime(0.2, audioCtx.currentTime);
     g.gain.linearRampToValueAtTime(0, audioCtx.currentTime + dur);
     osc.connect(g); g.connect(masterGain);
     osc.start(); osc.stop(audioCtx.currentTime + dur);
@@ -189,7 +219,6 @@ function spawnHand() {
         let m = SHAPES[Math.floor(Math.random()*SHAPES.length)];
         const rCount = Math.floor(Math.random()*4);
         for(let r=0; r<rCount; r++) m = m[0].map((_, idx) => m.map(row => row[idx]).reverse());
-        
         hand.push({ 
             m: m, c: `hsl(${Math.random()*360}, 80%, 65%)`, 
             curX: canvas.width/2, curY: canvas.height + 60, targetX: 0, targetY: 0, active: true 
@@ -200,63 +229,77 @@ function spawnHand() {
 }
 
 function loop() {
+    // Фон без прозрачности быстрее
     ctx.fillStyle = "#020205";
-    ctx.fillRect(0,0, canvas.width, canvas.height);
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     ctx.save();
-    if (shake > 0) { ctx.translate(Math.random()*shake-shake/2, Math.random()*shake-shake/2); shake *= 0.9; }
+    if (shake > 0) {
+        ctx.translate(Math.random()*shake-shake/2, Math.random()*shake-shake/2);
+        shake *= 0.85;
+    }
 
-    // Сетка
-    ctx.fillStyle = "rgba(255,255,255,0.02)";
-    ctx.roundRect(view.x-8, view.y-8, view.size+16, view.size+16, 25); ctx.fill();
+    // Сетка (статичная)
+    ctx.fillStyle = "rgba(255,255,255,0.03)";
+    ctx.beginPath();
+    ctx.roundRect(view.x-8, view.y-8, view.size+16, view.size+16, 20);
+    ctx.fill();
 
-    for(let r=0; r<GRID_SIZE; r++)
-        for(let c=0; c<GRID_SIZE; c++)
-            drawBox(view.x+c*view.cellSize, view.y+r*view.cellSize, view.cellSize, grid[r][c] || "rgba(255,255,255,0.05)");
+    // Отрисовка клеток поля из кэша
+    for(let r=0; r<GRID_SIZE; r++) {
+        for(let c=0; c<GRID_SIZE; c++) {
+            const x = view.x + c * view.cellSize;
+            const y = view.y + r * view.cellSize;
+            if (grid[r][c]) {
+                const img = getBlockTexture(grid[r][c], view.cellSize);
+                ctx.drawImage(img, x, y, view.cellSize, view.cellSize);
+            } else {
+                ctx.strokeStyle = "rgba(255,255,255,0.05)";
+                ctx.strokeRect(x+2, y+2, view.cellSize-4, view.cellSize-4);
+            }
+        }
+    }
 
     // Призрак
     if (dragging) {
         const r = Math.round((dragging.curY - view.y - (dragging.m.length * view.cellSize)/2) / view.cellSize);
         const c = Math.round((dragging.curX - view.x - (dragging.m[0].length * view.cellSize)/2) / view.cellSize);
         if (canFit(dragging.m, r, c)) {
+            ctx.globalAlpha = 0.3;
             dragging.m.forEach((row, ri) => row.forEach((v, ci) => {
-                if(v) drawBox(view.x+(c+ci)*view.cellSize, view.y+(r+ri)*view.cellSize, view.cellSize, dragging.c, 0.3);
+                if(v) ctx.drawImage(getBlockTexture(dragging.c, view.cellSize), view.x+(c+ci)*view.cellSize, view.y+(r+ri)*view.cellSize, view.cellSize, view.cellSize);
             }));
+            ctx.globalAlpha = 1;
         }
     }
     ctx.restore();
 
-    // Блоки в руке
+    // Блоки в руке (оптимизировано перемещение)
     hand.forEach(s => {
         if(!s.active) return;
         if (dragging !== s) {
-            s.curX += (s.targetX - s.curX) * 0.15;
-            s.curY += (s.targetY - s.curY) * 0.15;
+            s.curX += (s.targetX - s.curX) * 0.2;
+            s.curY += (s.targetY - s.curY) * 0.2;
         }
-        const b = view.cellSize * (dragging === s ? 0.92 : 0.45);
+        const bSize = view.cellSize * (dragging === s ? 0.9 : 0.5);
+        const img = getBlockTexture(s.c, bSize);
         s.m.forEach((row, ri) => row.forEach((v, ci) => {
-            if(v) drawBox(s.curX + (ci-s.m[0].length/2)*b, s.curY + (ri-s.m.length/2)*b, b, s.c);
+            if(v) ctx.drawImage(img, s.curX + (ci-s.m[0].length/2)*bSize, s.curY + (ri-s.m.length/2)*bSize, bSize, bSize);
         }));
     });
 
-    // Частицы
+    // Частицы (лимит 50 шт)
+    if(particles.length > 50) particles.shift();
     particles.forEach((p, i) => {
-        p.x += p.vx; p.y += p.vy; p.vy += 0.2; p.life -= 0.02;
-        ctx.fillStyle = p.c; ctx.globalAlpha = p.life;
-        ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, 7); ctx.fill();
-        if(p.life <= 0) particles.splice(i,1);
+        p.x += p.vx; p.y += p.vy; p.vy += 0.2; p.life -= 0.03;
+        ctx.fillStyle = p.c; ctx.globalAlpha = Math.max(0, p.life);
+        ctx.fillRect(p.x, p.y, 3, 3);
+        if(p.life <= 0) particles.splice(i, 1);
     });
     ctx.globalAlpha = 1;
 
     document.getElementById('scoreLabel').innerText = score;
     requestAnimationFrame(loop);
-}
-
-function drawBox(x, y, s, color, a=1) {
-    ctx.globalAlpha = a; ctx.fillStyle = color;
-    if(color.startsWith('hsl')) { ctx.shadowBlur = s*0.25; ctx.shadowColor = color; }
-    ctx.beginPath(); ctx.roundRect(x+2.5, y+2.5, s-5, s-5, s*0.22); ctx.fill();
-    ctx.shadowBlur = 0; ctx.globalAlpha = 1;
 }
 
 function handleStart(e) {
@@ -268,7 +311,6 @@ function handleStart(e) {
         const r = Math.floor((p.y - view.y) / view.cellSize);
         const c = Math.floor((p.x - view.x) / view.cellSize);
         if (r >= 0 && r < GRID_SIZE && c >= 0 && c < GRID_SIZE) {
-            // Взрыв 3x3
             for(let i=r-1; i<=r+1; i++) {
                 for(let j=c-1; j<=c+1; j++) {
                     if(i>=0 && i<GRID_SIZE && j>=0 && j<GRID_SIZE && grid[i][j]) {
@@ -277,8 +319,8 @@ function handleStart(e) {
                     }
                 }
             }
-            playSfx(100, 0.4, 'square');
-            hammerMode = false; hammerReady = false; shake = 15;
+            playSfx(150, 0.4);
+            hammerMode = false; hammerReady = false; shake = 10;
             document.getElementById('hammerBtn').classList.remove('ready', 'active');
         }
         return;
@@ -286,11 +328,11 @@ function handleStart(e) {
 
     hand.forEach(s => {
         const dx = s.curX - p.x, dy = s.curY - p.y;
-        if (s.active && Math.sqrt(dx*dx + dy*dy) < 55) {
+        if (s.active && Math.sqrt(dx*dx + dy*dy) < 40) {
             if (now - lastTap < 300) {
                 s.m = s.m[0].map((_, i) => s.m.map(row => row[i]).reverse());
-                playSfx(440, 0.05); dragging = null;
-            } else { dragging = s; playSfx(220, 0.05); }
+                playSfx(400, 0.05); dragging = null;
+            } else { dragging = s; playSfx(300, 0.05); }
         }
     });
     lastTap = now;
@@ -299,7 +341,8 @@ function handleStart(e) {
 function handleMove(e) {
     if (!dragging) return;
     const p = getPos(e);
-    dragging.curX = p.x; dragging.curY = p.y - (view.cellSize * 2);
+    dragging.curX = p.x; 
+    dragging.curY = p.y - (view.cellSize * 1.5);
     e.preventDefault();
 }
 
@@ -310,7 +353,9 @@ function handleEnd() {
 
     if (canFit(dragging.m, r, c)) {
         dragging.m.forEach((row, ri) => row.forEach((v, ci) => { if(v) grid[r+ri][c+ci] = dragging.c; }));
-        dragging.active = false; score += 40; playSfx(300, 0.1);
+        dragging.active = false; 
+        score += 40; 
+        playSfx(200, 0.1);
         checkLines();
         if (hand.every(h => !h.active)) spawnHand();
         else if (isGameOver()) endGame();
@@ -326,11 +371,11 @@ function checkLines() {
         if(f) cs.push(i);
     }
     if(rs.length + cs.length > 0) {
-        combo++; shake = 8 + (rs.length + cs.length)*2;
-        playSfx(500 + (combo * 100), 0.3, 'triangle');
+        combo++; shake = 5 + (rs.length + cs.length)*2;
+        playSfx(400 + (combo * 50), 0.2);
         rs.forEach(r => { for(let c=0; c<GRID_SIZE; c++) { spawnP(view.x+c*view.cellSize, view.y+r*view.cellSize, grid[r][c]); grid[r][c] = 0; } });
         cs.forEach(c => { for(let r=0; r<GRID_SIZE; r++) { if(grid[r][c]) { spawnP(view.x+c*view.cellSize, view.y+r*view.cellSize, grid[r][c]); grid[r][c] = 0; } } });
-        score += (rs.length + cs.length) * 150 * combo;
+        score += (rs.length + cs.length) * 100 * combo;
         if(score >= 1000 && !hammerReady) { hammerReady = true; document.getElementById('hammerBtn').classList.add('ready'); }
         showComboHUD();
     } else { combo = 0; }
@@ -340,15 +385,11 @@ function showComboHUD() {
     const el = document.getElementById('comboText');
     el.innerText = combo > 1 ? `COMBO X${combo}` : `EXCELLENT!`;
     el.style.opacity = 1; el.style.transform = "translateY(0)";
-    document.getElementById('scoreLabel').style.transform = "scale(1.1)";
-    setTimeout(() => { 
-        el.style.opacity = 0; el.style.transform = "translateY(10px)";
-        document.getElementById('scoreLabel').style.transform = "scale(1)";
-    }, 800);
+    setTimeout(() => { el.style.opacity = 0; el.style.transform = "translateY(10px)"; }, 800);
 }
 
 function spawnP(x, y, c) {
-    for(let i=0; i<8; i++) particles.push({ x: x+view.cellSize/2, y: y+view.cellSize/2, vx: Math.random()*10-5, vy: Math.random()*10-5, life: 1, c: c });
+    for(let i=0; i<5; i++) particles.push({ x: x+view.cellSize/2, y: y+view.cellSize/2, vx: Math.random()*6-3, vy: Math.random()*6-3, life: 1, c: c });
 }
 
 function canFit(m, r, c) {
@@ -360,9 +401,8 @@ function canFit(m, r, c) {
 function isGameOver() {
     return !hand.some(s => {
         if (!s.active) return false;
-        let t = s.m;
-        for(let r=0; r<=GRID_SIZE-t.length; r++)
-            for(let c=0; c<=GRID_SIZE-t[0].length; c++) if(canFit(t, r, c)) return true;
+        for(let r=0; r<=GRID_SIZE-s.m.length; r++)
+            for(let c=0; c<=GRID_SIZE-s.m[0].length; c++) if(canFit(s.m, r, c)) return true;
         return false;
     });
 }
@@ -379,14 +419,7 @@ function startGame() {
 function endGame() { isGameActive = false; document.getElementById('uiGameOver').style.display = 'flex'; document.getElementById('finalScore').innerText = score; }
 function showFAQ(v) { document.getElementById('uiFAQ').style.display = v ? 'flex' : 'none'; }
 function getPos(e) { const t = e.touches ? e.touches[0] : e; return { x: t.clientX, y: t.clientY }; }
-
-function toggleHammer() { 
-    if(hammerReady) { 
-        hammerMode = !hammerMode; 
-        document.getElementById('hammerBtn').classList.toggle('active', hammerMode);
-    } 
-}
-
+function toggleHammer() { if(hammerReady) { hammerMode = !hammerMode; document.getElementById('hammerBtn').classList.toggle('active', hammerMode); } }
 function loadMusic(e) { const f = e.target.files[0]; if(f) { const a = new Audio(URL.createObjectURL(f)); a.loop = true; a.play(); } }
 
 canvas.addEventListener('touchstart', handleStart, {passive: false});
